@@ -6,8 +6,9 @@ export async function GET(req: NextRequest) {
   if (!raw) return NextResponse.json({ error: "Not connected" }, { status: 401 });
 
   const type = req.nextUrl.searchParams.get("type") || "heart-rate";
+  const hours = type === "sleep" ? 36 : 24;
   const end = new Date();
-  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+  const start = new Date(end.getTime() - hours * 60 * 60 * 1000);
 
   try {
     const tokens = JSON.parse(raw);
