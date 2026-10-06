@@ -91,6 +91,39 @@ export async function verifyHealthIdentity(tokens: Record<string, unknown>) {
   };
 }
 
+type DataShape = "sample" | "interval" | "daily" | "session";
+
+function dataShape(type: string): DataShape {
+  if (["heart-rate", "heart-rate-variability", "oxygen-saturation", "respiratory-rate"].includes(type)) {
+    return "sample";
+  }
+  if (["daily-heart-rate-variability", "daily-resting-heart-rate", "daily-oxygen-saturation", "daily-respiratory-rate", "daily-heart-rate-zones"].includes(type)) {
+    return "daily";
+  }
+  if (type === "sleep" || type === "exercise") return "session";
+  return "interval";
+}
+
+function filterFor(type: string, start: string, end: string) {
+  const field = type.replaceAll("-", "_");
+  const shape = dataShape(type);
+
+  if (shape === "daily") {
+    const startDate = start.slice(0, 10);
+    const endDate = end.slice(0, 10);
+    return `${field}.date >= "${startDate}" AND ${field}.date <= "${endDate}"`;
+  }
+
+  const path =
+    shape === "sample"
+      ? "sample_time.physical_time"
+      : shape === "session"
+        ? "interval.start_time"
+        : "interval.start_time";
+
+  return `${field}.${path} >= "${start}" AND ${field}.${path} < "${end}"`;
+}
+
 export async function healthList(
   type: string,
   tokens: Record<string, unknown>,
@@ -103,26 +136,15 @@ export async function healthList(
   const { token } = await client.getAccessToken();
   if (!token) throw new Error("Unable to refresh Google access token");
 
-  const field = type.replaceAll("-", "_");
-  const isSample = [
-    "heart-rate",
-    "heart-rate-variability",
-    "oxygen-saturation",
-    "respiratory-rate",
-  ].includes(type);
-
   const u = new URL(
     `https://health.googleapis.com/v4/users/me/dataTypes/${type}/dataPoints`,
   );
-  u.searchParams.set("pageSize", "10000");
+  u.searchParams.set("pageSize", type === "sleep" || type === "exercise" ? "25" : "10000");
   u.searchParams.set(
     "dataSourceFamily",
     "users/me/dataSourceFamilies/google-wearables",
   );
-  u.searchParams.set(
-    "filter",
-    `${field}.${isSample ? "sample_time.physical_time" : "interval.start_time"} >= "${start}" AND ${field}.${isSample ? "sample_time.physical_time" : "interval.start_time"} < "${end}"`,
-  );
+  u.searchParams.set("filter", filterFor(type, start, end));
 
   const points: unknown[] = [];
   let pageToken: string | undefined;
