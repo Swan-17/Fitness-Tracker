@@ -111,7 +111,10 @@ function filterFor(type: string, start: string, end: string) {
   if (shape === "daily") {
     const startDate = start.slice(0, 10);
     const endDate = end.slice(0, 10);
-    return `${field}.date >= "${startDate}" AND ${field}.date <= "${endDate}"`;
+    const exclusiveEnd = new Date(`${endDate}T00:00:00Z`);
+    exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1);
+    const exclusiveEndDate = exclusiveEnd.toISOString().slice(0, 10);
+    return `${field}.date >= "${startDate}" AND ${field}.date < "${exclusiveEndDate}"`;
   }
 
   const path =
