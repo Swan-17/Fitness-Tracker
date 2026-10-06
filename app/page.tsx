@@ -31,6 +31,7 @@ export default function Home() {
   });
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [device, setDevice] = useState<{ batteryLevel?: number; batteryStatus?: string; deviceVersion?: string; lastSyncTime?: string } | null>(null);
 
   useEffect(() => {
     const error = new URLSearchParams(window.location.search).get("oauth_error");
@@ -42,14 +43,23 @@ export default function Home() {
         setConnected(x.connected);
         if (!x.connected) return;
 
-        const results = await Promise.allSettled([
-          getHealth("heart-rate"),
+        const [results, deviceResult] = await Promise.all([
+          Promise.allSettled([
+            getHealth("heart-rate"),
           getHealth("daily-resting-heart-rate"),
           getHealth("daily-heart-rate-variability"),
           getHealth("steps"),
           getHealth("active-zone-minutes"),
-          getHealth("sleep"),
+            getHealth("sleep"),
+          ]),
+          fetch("/api/device", { cache: "no-store" }).then(async (r) => {
+            const json = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(json.error || `Device request failed (${r.status})`);
+            return json.device;
+          }).catch(() => null),
         ]);
+
+        setDevice(deviceResult);
 
         const errors = results
           .filter((r): r is PromiseRejectedResult => r.status === "rejected")
@@ -65,6 +75,7 @@ export default function Home() {
             const sample = p.heartRate;
             const time = sample?.sampleTime?.physicalTime ?? sample?.sampleTime?.physical_time;
             return {
+              timeMs: time ? new Date(time).getTime() : 0,
               hour: time
                 ? new Date(time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                 : "",
@@ -72,7 +83,11 @@ export default function Home() {
             };
           })
           .filter((p) => p.hour && p.bpm > 0);
-        if (hrPoints.length) setLiveHr(hrPoints);
+        hrPoints.sort((a, b) => a.timeMs - b.timeMs);
+        const displayPoints = hrPoints.length > 160
+          ? hrPoints.filter((_, i) => i % Math.ceil(hrPoints.length / 160) === 0)
+          : hrPoints;
+        if (displayPoints.length) setLiveHr(displayPoints.map(({ timeMs: _timeMs, ...point }) => point));
 
         const latestByDate = (points: Point[], field: string) =>
           [...points]
@@ -149,6 +164,9 @@ export default function Home() {
   }, []);
 
   const chartData = liveHr || [];
+  const currentHr = chartData.length ? chartData[chartData.length - 1].bpm : 0;
+  const batteryLevel = typeof device?.batteryLevel === "number" ? Math.max(0, Math.min(100, device.batteryLevel)) : 0;
+  const batteryLabel = batteryLevel ? `${batteryLevel}%` : device?.batteryStatus || "—";
   const hasSleep = metrics.sleepHours > 0;
   const displayHours = Math.floor(metrics.sleepHours);
   const displayMinutes = Math.round((metrics.sleepHours - displayHours) * 60);
@@ -173,6 +191,19 @@ export default function Home() {
         </section>
       )}
 
+      <section className="heroMetrics">
+        <div className="currentCard">
+          <span className="eyebrow">CURRENT HEART RATE</span>
+          <div className="currentHr">{currentHr || "—"}<small>bpm</small></div>
+          <span className="liveDot"><i />Latest synced reading</span>
+        </div>
+        <div className="batteryCard">
+          <span className="eyebrow">WRISTBAND</span>
+          <div className="batteryRow"><strong>{batteryLabel}</strong><span className="batteryIcon"><i style={{ width: `${batteryLevel}%` }} /></span></div>
+          <span className="muted">{device?.deviceVersion || "Device status"}{device?.lastSyncTime ? ` · synced ${new Date(device.lastSyncTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+        </div>
+      </section>
+
       <section className="grid">
         <Metric label="Resting HR" value={metrics.restingHr ? String(metrics.restingHr) : "—"} unit="bpm" trend={metrics.restingHr ? "Live Google Health" : connected ? "Waiting for data" : "Connect Google Health"} />
         <Metric label="HRV" value={metrics.hrv ? String(Math.round(metrics.hrv)) : "—"} unit="ms" trend={metrics.hrv ? "Live Google Health" : connected ? "Waiting for data" : "Connect Google Health"} />
@@ -195,7 +226,7 @@ export default function Home() {
         <div className="chart">
           {chartData.length ? <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={chartData}>
-              <XAxis dataKey="hour" />
+              <XAxis dataKey="hour" interval="preserveStartEnd" minTickGap={28} />
               <YAxis domain={[45, 150]} />
               <Tooltip />
               <Area type="monotone" dataKey="bpm" stroke="#8b5cf6" fill="#8b5cf633" strokeWidth={2} />
