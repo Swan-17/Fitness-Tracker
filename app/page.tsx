@@ -19,6 +19,7 @@ export default function Home() {
   const [connected, setConnected] = useState(false);
   const [liveHr, setLiveHr] = useState<Array<{ hour: string; bpm: number }> | null>(null);
   const [oauthError, setOauthError] = useState<string | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
 
   useEffect(() => {
     const error = new URLSearchParams(window.location.search).get("oauth_error");
@@ -30,8 +31,12 @@ export default function Home() {
         setConnected(x.connected);
         if (!x.connected) return;
 
-        const r = await fetch("/api/health?type=heart-rate");
-        if (!r.ok) return;
+        const r = await fetch("/api/health?type=heart-rate", { cache: "no-store" });
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          setHealthError(body.error || `Google Health request failed (${r.status})`);
+          return;
+        }
 
         const json = await r.json();
         const points = (json.dataPoints || [])
@@ -48,11 +53,12 @@ export default function Home() {
           .filter((point: { hour: string; bpm: number }) => point.hour && point.bpm > 0);
 
         if (points.length) setLiveHr(points);
+        else setHealthError("Google Health is connected, but no heart-rate samples were returned for the last 24 hours. Make sure your Fitbit has synced recently.");
       })
       .catch(() => {});
   }, []);
 
-  const chartData = liveHr || demoHr;
+  const chartData = liveHr || [];
 
   return (
     <main>
@@ -75,26 +81,33 @@ export default function Home() {
       )}
 
       <section className="grid">
-        <Metric label="Resting HR" value="58" unit="bpm" trend="−3 vs 30d" />
-        <Metric label="HRV" value="52" unit="ms" trend="+8% vs 30d" />
-        <Metric label="Steps" value="8,421" unit="" trend="84% of goal" />
-        <Metric label="Active Zone" value="42" unit="min" trend="Today" />
+        <Metric label="Resting HR" value="—" unit="bpm" trend={connected ? "Live metric coming next" : "Connect Google Health"} />
+        <Metric label="HRV" value="—" unit="ms" trend={connected ? "Live metric coming next" : "Connect Google Health"} />
+        <Metric label="Steps" value="—" unit="" trend={connected ? "Live metric coming next" : "Connect Google Health"} />
+        <Metric label="Active Zone" value="—" unit="min" trend={connected ? "Live metric coming next" : "Connect Google Health"} />
       </section>
+
+      {healthError && connected && (
+        <section className="panel errorPanel">
+          <strong>Connected, but no live data yet</strong>
+          <p>{healthError}</p>
+        </section>
+      )}
 
       <section className="panel wide">
         <div className="panelHead">
           <div><span className="eyebrow">HEART</span><h2>24-hour heart rate</h2></div>
-          <span className="pill">{liveHr ? "Live Google Health" : "Demo data"}</span>
+          <span className="pill">{liveHr ? "Live Google Health" : connected ? "Waiting for data" : "Not connected"}</span>
         </div>
         <div className="chart">
-          <ResponsiveContainer width="100%" height={300}>
+          {chartData.length ? <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={chartData}>
               <XAxis dataKey="hour" />
               <YAxis domain={[45, 150]} />
               <Tooltip />
               <Area type="monotone" dataKey="bpm" stroke="#8b5cf6" fill="#8b5cf633" strokeWidth={2} />
             </AreaChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer> : <div className="muted" style={{ padding: "3rem 0" }}>No live heart-rate samples to display.</div>
         </div>
       </section>
 
@@ -102,7 +115,7 @@ export default function Home() {
         <section className="panel">
           <div className="panelHead">
             <div><span className="eyebrow">SLEEP</span><h2>Last night</h2></div>
-            <strong className="big">7h 49m</strong>
+            <strong className="big">—</strong>
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={sleep} layout="vertical">
@@ -117,9 +130,9 @@ export default function Home() {
         <section className="panel">
           <div className="panelHead">
             <div><span className="eyebrow">RECOVERY</span><h2>Readiness</h2></div>
-            <span className="score">82</span>
+            <span className="score">—</span>
           </div>
-          <p className="muted">Strong recovery today. HRV is above your 30-day baseline and sleep duration is on target.</p>
+          <p className="muted">Recovery will be calculated from your connected Google Health data once the corresponding daily metrics are loaded.</p>
           <div className="progress"><span style={{ width: "82%" }} /></div>
         </section>
       </section>
@@ -132,7 +145,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer>{connected && liveHr ? "Live Google Health heart-rate data is connected." : "Demo values remain local until Google Health OAuth is connected."}</footer>
+      <footer>{connected && liveHr ? "Live Google Health heart-rate data is connected." : connected ? "Google Health is connected; waiting for synced health data." : "Connect Google Health to load your personal data."}</footer>
     </main>
   );
 }
