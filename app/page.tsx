@@ -107,7 +107,7 @@ export default function Home() {
               <Tooltip />
               <Area type="monotone" dataKey="bpm" stroke="#8b5cf6" fill="#8b5cf633" strokeWidth={2} />
             </AreaChart>
-          </ResponsiveContainer> : <div className="muted" style={{ padding: "3rem 0" }}>No live heart-rate samples to display.</div>
+          </ResponsiveContainer> : <div className="muted" style={{ padding: "3rem 0" }}>No live heart-rate samples to display.</div>}
         </div>
       </section>
 
