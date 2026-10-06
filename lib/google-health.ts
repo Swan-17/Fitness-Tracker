@@ -69,6 +69,11 @@ function filterFor(type: string, start: string, end: string) {
     const exclusiveEndDate = exclusiveEnd.toISOString().slice(0, 10);
     return `${field}.date >= "${startDate}" AND ${field}.date < "${exclusiveEndDate}"`;
   }
+  // Sleep sessions cannot be filtered by interval.start_time in Google Health.
+  // The sleep list API supports interval.end_time (or civil_end_time) instead.
+  if (type === "sleep") {
+    return `${field}.interval.end_time >= "${start}" AND ${field}.interval.end_time < "${end}"`;
+  }
   const path = shape === "sample" ? "sample_time.physical_time" : "interval.start_time";
   return `${field}.${path} >= "${start}" AND ${field}.${path} < "${end}"`;
 }
