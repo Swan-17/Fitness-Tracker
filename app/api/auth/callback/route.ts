@@ -12,7 +12,9 @@ export async function GET(req: NextRequest) {
 
   try {
     const { tokens } = await oauthClient().getToken(code);
-    const { credentials } = await verifyHealthIdentity(tokens);
+    const { credentials } = await verifyHealthIdentity(
+      tokens as unknown as Record<string, unknown>,
+    );
     const storedTokens = { ...tokens, ...credentials };
 
     const response = NextResponse.redirect(new URL("/", req.url));
