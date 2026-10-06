@@ -180,6 +180,13 @@ export default function Home() {
       .catch((error) => setHealthError(error instanceof Error ? error.message : "Unable to load Google Health data."));
   }, []);
 
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") window.location.reload();
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const chartData = liveHr || [];
   const currentHr = chartData.length ? chartData[chartData.length - 1].bpm : 0;
   const batteryLevel = typeof device?.batteryLevel === "number" ? Math.max(0, Math.min(100, device.batteryLevel)) : 0;
