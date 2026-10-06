@@ -5,8 +5,9 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, 
 
 type Point = Record<string, any>;
 
-async function getHealth(type: string) {
-  const r = await fetch(`/api/health?type=${type}`, { cache: "no-store" });
+async function getHealth(type: string, days?: number) {
+  const query = days ? `&days=${days}` : "";
+  const r = await fetch(`/api/health?type=${type}${query}`, { cache: "no-store" });
   const json = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(json.error || `Google Health request failed (${r.status})`);
   return json.dataPoints || [];
@@ -20,6 +21,7 @@ function num(value: unknown) {
 export default function Home() {
   const [connected, setConnected] = useState(false);
   const [liveHr, setLiveHr] = useState<Array<{ hour: string; bpm: number }> | null>(null);
+  const [dailySteps, setDailySteps] = useState<Array<{ date: string; steps: number }>>([]);
   const [metrics, setMetrics] = useState({
     restingHr: 0,
     hrv: 0,
@@ -48,7 +50,7 @@ export default function Home() {
             getHealth("heart-rate"),
           getHealth("daily-resting-heart-rate"),
           getHealth("daily-heart-rate-variability"),
-          getHealth("steps"),
+          getHealth("steps", 8),
           getHealth("active-zone-minutes"),
             getHealth("sleep"),
           ]),
@@ -96,10 +98,25 @@ export default function Home() {
         const rhrValue = latestByDate(rhr as Point[], "dailyRestingHeartRate");
         const hrvValue = latestByDate(hrv as Point[], "dailyHeartRateVariability");
 
-        const totalSteps = (steps as Point[]).reduce(
-          (sum, p) => sum + num(p.steps?.count ?? p.steps?.steps ?? p.steps?.value),
-          0,
-        );
+        const stepTotals = new Map<string, number>();
+        for (const p of steps as Point[]) {
+          const s = p.steps;
+          const time = s?.interval?.startTime ?? s?.interval?.start_time ?? s?.interval?.endTime ?? s?.interval?.end_time;
+          if (!time) continue;
+          const date = new Date(time).toLocaleDateString("en-CA");
+          const count = num(s?.count ?? s?.steps ?? s?.value);
+          stepTotals.set(date, (stepTotals.get(date) ?? 0) + count);
+        }
+        const stepDays = Array.from({ length: 7 }, (_, index) => {
+          const date = new Date();
+          date.setHours(0, 0, 0, 0);
+          date.setDate(date.getDate() - (6 - index));
+          const key = date.toLocaleDateString("en-CA");
+          return { date: date.toLocaleDateString([], { month: "short", day: "numeric" }), steps: Math.round(stepTotals.get(key) ?? 0) };
+        });
+        setDailySteps(stepDays);
+        const todayKey = new Date().toLocaleDateString("en-CA");
+        const totalSteps = stepTotals.get(todayKey) ?? 0;
 
         const totalZone = (zones as Point[]).reduce(
           (sum, p) => sum + num(p.activeZoneMinutes?.activeZoneMinutes ?? p.activeZoneMinutes?.active_zone_minutes),
@@ -179,9 +196,7 @@ export default function Home() {
           <h1>Personal health, without the clutter.</h1>
           <p>One calm dashboard for the signals your wristband collects.</p>
         </div>
-        <a className="connect" href="/api/auth/start">
-          {connected ? "Reconnect Google Health" : "Connect Google Health"}
-        </a>
+
       </header>
 
       {oauthError && (
@@ -217,6 +232,23 @@ export default function Home() {
           <p>{healthError}</p>
         </section>
       )}
+
+      <section className="panel wide">
+        <div className="panelHead">
+          <div><span className="eyebrow">ACTIVITY</span><h2>Daily steps</h2></div>
+          <span className="pill">{dailySteps.length ? "Last 7 days" : connected ? "Waiting for data" : "Not connected"}</span>
+        </div>
+        <div className="chart">
+          {dailySteps.length ? <ResponsiveContainer width="100%" height={260}>
+            <AreaChart data={dailySteps}>
+              <XAxis dataKey="date" />
+              <YAxis />
+              <Tooltip formatter={(value) => [Number(value).toLocaleString(), "Steps"]} />
+              <Area type="monotone" dataKey="steps" stroke="#60a5fa" fill="#60a5fa33" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer> : <div className="muted" style={{ padding: "3rem 0" }}>No daily step data to display.</div>}
+        </div>
+      </section>
 
       <section className="panel wide">
         <div className="panelHead">
