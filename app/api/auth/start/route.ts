@@ -1,0 +1,1 @@
+import {NextResponse} from "next/server"; import {authUrl} from "@/lib/google-health"; export async function GET(){const state=crypto.randomUUID();const r=NextResponse.redirect(authUrl(state));r.cookies.set("oauth_state",state,{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",maxAge:600,path:"/"});return r}
