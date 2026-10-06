@@ -53,17 +53,35 @@ export async function verifyHealthIdentity(tokens: Record<string, unknown>) {
   if (!response.ok) {
     const body = await response.text();
     let message = `Google Health identity check failed (${response.status})`;
+
     try {
       const parsed = JSON.parse(body);
-      if (parsed?.error?.details?.some(
-        (detail: { reason?: string }) => detail.reason === "ACCOUNT_NOT_LINKED",
-      )) {
+      const error = parsed?.error;
+      const reason = error?.details?.find(
+        (detail: { reason?: string }) => detail?.reason,
+      )?.reason;
+
+      if (reason === "ACCOUNT_NOT_LINKED") {
         message =
-          "Your Google Account is not linked to Google Health. Open the Google Health app, sign in with this Google Account, link/migrate your Fitbit account, then try again.";
+          "Your Google Account is not linked to Google Health. Open Google Health, sign in with this Google Account, create/link your Health profile or migrate your Fitbit account, then reconnect.";
+      } else if (reason === "MISSING_OAUTH_SCOPE") {
+        message =
+          "Google Health did not grant the required permission. Reconnect and approve all requested Health permissions.";
+      } else if (
+        response.status === 403 &&
+        (reason === "DATA_ACCESS_DENIED" ||
+          reason === "RESOURCE_PERMISSION_DENIED" ||
+          error?.message?.toLowerCase()?.includes("caller does not have permission"))
+      ) {
+        message =
+          "Google Health denied this account. If this is a Fitbit account, sign out of the Google Health app, then sign back in with the same Google Account using Continue with Google. If prompted, migrate/link the Fitbit account, then reconnect.";
+      } else if (reason) {
+        message = `Google Health denied access (${response.status}, ${reason}).`;
       }
     } catch {
-      // Keep the generic message when Google does not return JSON.
+      // Keep the safe generic message when Google does not return JSON.
     }
+
     throw new Error(message);
   }
 
